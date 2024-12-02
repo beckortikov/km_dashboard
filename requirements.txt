@@ -5,5 +5,5 @@ streamlit-authenticator==0.1.5
 requests
 python-dotenv==1.0.0
 plotly==5.18.0
-read_json
+
 
