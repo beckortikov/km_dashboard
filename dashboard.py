@@ -83,7 +83,7 @@ st.markdown("""
             text-align: center;
             padding: 20px 0;
             margin-bottom: 30px;
-            background: linear-gradient(90deg, #1f77b4, #2c3e50);
+            background: linear-gradient(90deg, #ff8c00, #ff4500);
             border-radius: 10px;
         }
         .main-header h1 {
@@ -247,7 +247,7 @@ def main():
             "За месяц": get_status_metrics(month_data)
         }
 
-        # Отображаем метрики в 4 колонках
+        # Отображаем метрики в 4 колонк��х
         cols = st.columns(4)
         for col, (period, metrics) in zip(cols, metrics_data.items()):
             with col:
@@ -274,7 +274,7 @@ def main():
                 key="period_selector"
             )
 
-        selected_data = month_data if period == "За месяц" else week_data
+        selected_data = month_data if period == "За меся��" else week_data
         period_suffix = "за месяц" if period == "За месяц" else "за неделю"
 
         col_left, col_right = st.columns(2)
@@ -300,7 +300,7 @@ def main():
         with col2:
             display_branch_cards(yesterday_data, "Статистика по филиалам за вчера")
 
-        # Добавляем сравнительный анализ
+        # Добавляем ср��внительный анализ
         st.markdown("<hr>", unsafe_allow_html=True)
         st.subheader("Сравнение с предыдущим днем")
 
