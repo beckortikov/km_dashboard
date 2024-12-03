@@ -79,6 +79,21 @@ st.markdown("""
         .approval-rate {
             color: #6f42c1;
         }
+        .main-header {
+            text-align: center;
+            padding: 20px 0;
+            margin-bottom: 30px;
+            background: linear-gradient(90deg, #1f77b4, #2c3e50);
+            border-radius: 10px;
+        }
+        .main-header h1 {
+            color: white;
+            font-size: 32px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+            margin: 0;
+            padding: 10px;
+        }
     </style>
 """, unsafe_allow_html=True)
 
