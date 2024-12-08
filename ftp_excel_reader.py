@@ -67,17 +67,26 @@ class FTPExcelReader:
 
         logger.debug(f"Попытка конвертации даты: {date_str}")
         try:
-            # Сначала пробуем автоматическое определение
-            try:
-                return pd.to_datetime(date_str)
-            except:
-                pass
+            # Если это строка из Google таблицы (2024-06-19 11:25:42)
+            if isinstance(date_str, str) and len(date_str) == 19 and date_str[4] == '-':
+                try:
+                    return pd.to_datetime(date_str, format='%Y-%m-%d %H:%M:%S')
+                except:
+                    pass
 
-            # Если не получилось, пробуем конкретные форматы
+            # Если это строка из Excel (12/8/2024 9:42:48 AM)
+            if isinstance(date_str, str) and 'AM' in date_str.upper() or 'PM' in date_str.upper():
+                try:
+                    # Преобразуем 12-часовой формат в 24-часовой
+                    return pd.to_datetime(date_str, format='%m/%d/%Y %I:%M:%S %p')
+                except:
+                    pass
+
+            # Пробуем другие форматы
             date_formats = [
-                "%m/%d/%Y %I:%M:%S %p",  # 12/8/2024 9:37:03 AM
-                "%d.%m.%Y %H:%M:%S",     # 08.12.2024 09:37:03
-                "%Y-%m-%d %H:%M:%S",     # 2024-12-08 09:37:03
+                '%d.%m.%Y %H:%M:%S',     # 08.12.2024 09:37:03
+                '%Y-%m-%d %H:%M:%S',     # 2024-12-08 09:37:03
+                '%m/%d/%Y %H:%M:%S',     # 12/8/2024 09:37:03
             ]
 
             for date_format in date_formats:
@@ -86,8 +95,12 @@ class FTPExcelReader:
                 except ValueError:
                     continue
 
-            logger.error(f"Не удалось преобразовать дату: {date_str}")
-            raise ValueError(f"Неподдерживаемый формат даты: {date_str}")
+            # Если ни один формат не подошел, пробуем автоматическое определение
+            try:
+                return pd.to_datetime(date_str)
+            except:
+                logger.error(f"Не удалось преобразовать дату: {date_str}")
+                raise ValueError(f"Неподдерживаемый формат даты: {date_str}")
 
         except Exception as e:
             logger.error(f"Ошибка при конвертации даты '{date_str}': {str(e)}")
