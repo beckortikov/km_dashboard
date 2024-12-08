@@ -5,15 +5,18 @@ import tempfile
 import os
 from datetime import datetime
 from logger_config import setup_logger
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = setup_logger('ftp_excel_reader')
 
 class FTPExcelReader:
     def __init__(self):
-        self.host = "erifieb6.beget.tech"
-        self.username = "erifieb6_1c"
-        self.password = "QPzmxn11!"
-        self.filename = "1c_data.xlsx"
+        self.host = os.getenv("FTP_HOST")
+        self.username = os.getenv("FTP_USERNAME")
+        self.password = os.getenv("FTP_PASSWORD")
+        self.filename = os.getenv("FTP_FILENAME")
         logger.info("Инициализирован FTPExcelReader")
 
     def download_excel(self):
