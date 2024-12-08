@@ -67,24 +67,31 @@ class FTPExcelReader:
 
         logger.debug(f"Попытка конвертации даты: {date_str}")
         try:
+            # Сначала пробуем автоматическое определение
+            try:
+                return pd.to_datetime(date_str)
+            except:
+                pass
+
+            # Если не получилось, пробуем конкретные форматы
             date_formats = [
-                "%m/%d/%Y %I:%M:%S %p",
-                "%d.%m.%Y %H:%M:%S",
-                "%Y-%m-%d %H:%M:%S",
+                "%m/%d/%Y %I:%M:%S %p",  # 12/8/2024 9:37:03 AM
+                "%d.%m.%Y %H:%M:%S",     # 08.12.2024 09:37:03
+                "%Y-%m-%d %H:%M:%S",     # 2024-12-08 09:37:03
             ]
 
             for date_format in date_formats:
                 try:
-                    return pd.to_datetime(date_str, format=date_format)
+                    return datetime.strptime(date_str, date_format)
                 except ValueError:
                     continue
 
-            # Если ни один формат не подошел, пробуем автоматическое определение
-            return pd.to_datetime(date_str, format='mixed')
+            logger.error(f"Не удалось преобразовать дату: {date_str}")
+            raise ValueError(f"Неподдерживаемый формат даты: {date_str}")
 
         except Exception as e:
             logger.error(f"Ошибка при конвертации даты '{date_str}': {str(e)}")
-            return None
+            raise
 
     def _normalize_branch_name(self, branch_name):
         """Нормализует названия филиалов"""
@@ -152,15 +159,26 @@ class FTPExcelReader:
 
             # Конвертируем даты
             logger.info("Конвертация дат...")
-            df["Дата"] = pd.to_datetime(df["Дата"], format='mixed')
+            try:
+                # Сначала пробуем прямое преобразование
+                df["Дата"] = pd.to_datetime(df["Дата"])
+            except Exception as e:
+                logger.warning(f"Не удалось напрямую преобразовать даты: {str(e)}")
+                try:
+                    # Если не получилось, пробуем через apply
+                    df["Дата"] = df["Дата"].apply(self._convert_date)
+                    logger.info("Даты успешно преобразованы через _convert_date")
+                except Exception as e:
+                    logger.error(f"Ошибка при преобразовании дат через _convert_date: {str(e)}")
+                    raise
 
             # Проверяем успешность конвертации
             if not pd.api.types.is_datetime64_any_dtype(df["Дата"]):
                 logger.error("Не удалось преобразовать колонку 'Дата' в datetime")
-                # Пробуем альтернативный метод
-                df["Дата"] = df["Дата"].apply(self._convert_date)
+                raise ValueError("Не удалось преобразовать даты в правильный формат")
 
             logger.info(f"Тип данных колонки 'Дата': {df['Дата'].dtype}")
+            logger.debug(f"Пример даты после конвертации: {df['Дата'].iloc[0] if len(df) > 0 else 'нет данных'}")
 
             # Нормализуем названия филиалов
             logger.info("Нормализация названий филиалов...")
