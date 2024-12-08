@@ -4,6 +4,12 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import gspread
 from read_json import response_json
+from ftp_excel_reader import FTPExcelReader
+from cache_manager import CacheManager
+from logger_config import setup_logger
+
+# Инициализация логгера
+logger = setup_logger('dashboard')
 
 # Настройка страницы
 st.set_page_config(layout="wide")
@@ -93,6 +99,23 @@ st.markdown("""
             text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
             margin: 0;
             padding: 10px;
+        }
+        .comparison-card {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .source-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .source-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -220,12 +243,116 @@ def display_branch_cards(data, title):
             </div>
         """, unsafe_allow_html=True)
 
+def get_combined_data():
+    """Получение и объединение данных из скоринга и 1С"""
+    try:
+        logger.info("Начало получения комбинированных данных")
+
+        # Получаем данные скоринга
+        scoring_df = get_scoring_data()
+
+        # Получаем данные 1С
+        cache_manager = CacheManager()
+        cached_1c_data = cache_manager.get_yesterday_data()
+
+        if cached_1c_data is None:
+            logger.info("Данные 1С не найдены в кэше, загружаем с FTP")
+            # Если нет в кэше, загружаем с FTP
+            ftp_reader = FTPExcelReader()
+            excel_df = ftp_reader.read_excel()
+            cache_manager.save_data(excel_df)
+        else:
+            logger.info("Загружаем данные 1С из кэша")
+            excel_df = pd.DataFrame(cached_1c_data)
+            # Преобразуем колонку даты в datetime
+            try:
+                excel_df['Дата'] = pd.to_datetime(excel_df['Дата'])
+                logger.info("Колонка 'Дата' успешно преобразована в datetime")
+            except Exception as e:
+                logger.error(f"Ошибка при преобразовании колонки 'Дата': {str(e)}")
+                raise
+
+        logger.info(f"Получено записей из скоринга: {len(scoring_df) if scoring_df is not None else 0}")
+        logger.info(f"Получено записей из 1С: {len(excel_df) if excel_df is not None else 0}")
+
+        return scoring_df, excel_df
+    except Exception as e:
+        logger.error(f"Ошибка при получении данных: {str(e)}")
+        st.error(f"Ошибка при получении данных: {str(e)}")
+        return None, None
+
+def display_comparison_stats(scoring_data, excel_data, period_suffix):
+    """Отображение сравнительной статистики по источникам заявок"""
+    try:
+        logger.info("Начало отображения сравнительной статистики")
+
+        # Убедимся, что даты в правильном формате
+        if not pd.api.types.is_datetime64_any_dtype(excel_data['Дата']):
+            logger.warning("Преобразование колонки 'Дата' в datetime для данных 1С")
+            excel_data['Дата'] = pd.to_datetime(excel_data['Дата'])
+
+        comparison_data = []
+
+        unique_branches = set(scoring_data['Филиал'].unique()) | set(excel_data['Филиал'].unique())
+        logger.info(f"Найдено уникальных филиалов: {len(unique_branches)}")
+
+        for branch in unique_branches:
+            scoring_count = len(scoring_data[scoring_data['Филиал'] == branch])
+            excel_count = len(excel_data[excel_data['Филиал'] == branch])
+
+            total = scoring_count + excel_count
+            scoring_share = (scoring_count / total * 100) if total > 0 else 0
+
+            # Создаем запись для филиала
+            entry = {
+                'branch': branch,
+                'scoring': scoring_count,
+                'excel': excel_count,
+                'total': total,
+                'share': f"{scoring_share:.1f}%"
+            }
+            comparison_data.append(entry)
+
+        logger.info("Подготовлены данные для отображения")
+
+        # Отображаем статистику в виде карточек
+        for entry in comparison_data:
+            st.markdown(f"""
+                <div class="branch-card">
+                    <div class="branch-name">{entry['branch']}</div>
+                    <div class="stats-container">
+                        <div class="stat-item">
+                            <div class="stat-value total">{entry['total']}</div>
+                            <div class="stat-label">ВСЕГО ЗАЯВОК</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value approved">{entry['scoring']}</div>
+                            <div class="stat-label">ЧЕРЕЗ СКОРИНГ</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value rejected">{entry['excel']}</div>
+                            <div class="stat-label">ЧЕРЕЗ 1С</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value approval-rate">{entry['share']}</div>
+                            <div class="stat-label">ДОЛЯ СКОРИНГА</div>
+                        </div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        logger.info("Сравнительная статистика успешно отображена")
+
+    except Exception as e:
+        logger.error(f"Ошибка при отображении сравнительной статистики: {str(e)}")
+        st.error(f"Ошибка при отображении сравнительной статистики: {str(e)}")
+
 def main():
     st.markdown('<div class="main-header"><h1>Дашборд скоринга Kredit Market</h1></div>', unsafe_allow_html=True)
 
     try:
-        # Получаем данные
-        df = get_scoring_data()
+        # Получаем данные из обоих источников
+        scoring_df, excel_df = get_combined_data()
 
         # Определяем временные периоды
         today = datetime.now().date()
@@ -234,10 +361,10 @@ def main():
         month_ago = today - timedelta(days=30)
 
         # Создаем фильтры для разных периодов
-        today_data = df[df['Дата'].dt.date == today]
-        yesterday_data = df[df['Дата'].dt.date == yesterday]
-        week_data = df[df['Дата'].dt.date >= week_ago]
-        month_data = df[df['Дата'].dt.date >= month_ago]
+        today_data = scoring_df[scoring_df['Дата'].dt.date == today]
+        yesterday_data = scoring_df[scoring_df['Дата'].dt.date == yesterday]
+        week_data = scoring_df[scoring_df['Дата'].dt.date >= week_ago]
+        month_data = scoring_df[scoring_df['Дата'].dt.date >= month_ago]
 
         # Получаем метрики
         metrics_data = {
@@ -247,7 +374,7 @@ def main():
             "За месяц": get_status_metrics(month_data)
         }
 
-        # Отображаем метрики в 4 колонк��х
+        # Отображаем метрики в 4 колонках
         cols = st.columns(4)
         for col, (period, metrics) in zip(cols, metrics_data.items()):
             with col:
@@ -274,7 +401,7 @@ def main():
                 key="period_selector"
             )
 
-        selected_data = month_data if period == "За меся��" else week_data
+        selected_data = month_data if period == "За месяц" else week_data
         period_suffix = "за месяц" if period == "За месяц" else "за неделю"
 
         col_left, col_right = st.columns(2)
@@ -289,18 +416,31 @@ def main():
                                            f"Статистика по филиалам {period_suffix}"), use_container_width=True)
             st.plotly_chart(create_time_series(selected_data), use_container_width=True)
 
-
         # Добавляем детальную статистику по филиалам за сегодня и вчера
         st.markdown("<hr>", unsafe_allow_html=True)
         col1, col2 = st.columns(2)
 
         with col1:
-            display_branch_cards(today_data, "Статистика по филиалам за сегодня")
+            st.subheader("Статистика по филиалам за сегодня")
+            if scoring_df is not None and excel_df is not None:
+                display_comparison_stats(
+                    today_data,
+                    excel_df[excel_df['Дата'].dt.date == today],
+                    "за сегодня"
+                )
+            display_branch_cards(today_data, "Статистика скоринга за сегодня")
 
         with col2:
-            display_branch_cards(yesterday_data, "Статистика по филиалам за вчера")
+            st.subheader("Статистика по филиалам за вчера")
+            if scoring_df is not None and excel_df is not None:
+                display_comparison_stats(
+                    yesterday_data,
+                    excel_df[excel_df['Дата'].dt.date == yesterday],
+                    "за вчера"
+                )
+            display_branch_cards(yesterday_data, "Статистика скоринга за вчера")
 
-        # Добавляем ср��внительный анализ
+        # Добавляем сравнительный анализ
         st.markdown("<hr>", unsafe_allow_html=True)
         st.subheader("Сравнение с предыдущим днем")
 

@@ -1,0 +1,181 @@
+from ftplib import FTP
+import pandas as pd
+from io import BytesIO
+import tempfile
+import os
+from datetime import datetime
+from logger_config import setup_logger
+
+logger = setup_logger('ftp_excel_reader')
+
+class FTPExcelReader:
+    def __init__(self):
+        self.host = "erifieb6.beget.tech"
+        self.username = "erifieb6_1c"
+        self.password = "QPzmxn11!"
+        self.filename = "1c_data.xlsx"
+        logger.info("Инициализирован FTPExcelReader")
+
+    def download_excel(self):
+        """Скачивает Excel файл с FTP сервера"""
+        logger.info("Начало загрузки файла с FTP")
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:
+                with FTP(self.host) as ftp:
+                    logger.info(f"Подключение к FTP серверу: {self.host}")
+                    ftp.login(user=self.username, passwd=self.password)
+
+                    logger.debug(f"Текущая директория: {ftp.pwd()}")
+                    files = ftp.nlst()
+                    logger.debug(f"Список файлов: {files}")
+
+                    with BytesIO() as bio:
+                        try:
+                            logger.info(f"Попытка скачать файл: {self.filename}")
+                            ftp.retrbinary(f"RETR {self.filename}", bio.write)
+                            bio.seek(0)
+                            temp_file.write(bio.read())
+                            logger.info(f"Файл {self.filename} успешно скачан")
+                        except Exception as e:
+                            logger.warning(f"Ошибка при скачивании основного файла: {str(e)}")
+                            excel_files = [f for f in files if f.endswith(".xlsx")]
+
+                            if excel_files:
+                                logger.info(f"Найдены альтернативные Excel файлы: {excel_files}")
+                                self.filename = excel_files[0]
+                                ftp.retrbinary(f"RETR {self.filename}", bio.write)
+                                bio.seek(0)
+                                temp_file.write(bio.read())
+                                logger.info(f"Альтернативный файл {self.filename} успешно скачан")
+                            else:
+                                logger.error(f"Excel файлы не найдены. Доступные файлы: {files}")
+                                raise Exception(f"Excel файлы не найдены. Доступные файлы: {files}")
+
+                return temp_file.name
+
+        except Exception as e:
+            logger.error(f"Ошибка при скачивании файла с FTP: {str(e)}")
+            raise
+
+    def _convert_date(self, date_str):
+        """Конвертирует строку даты в нужный формат"""
+        if pd.isna(date_str):
+            return None
+
+        if isinstance(date_str, (pd.Timestamp, datetime)):
+            return date_str
+
+        logger.debug(f"Попытка конвертации даты: {date_str}")
+        try:
+            date_formats = [
+                "%m/%d/%Y %I:%M:%S %p",
+                "%d.%m.%Y %H:%M:%S",
+                "%Y-%m-%d %H:%M:%S",
+            ]
+
+            for date_format in date_formats:
+                try:
+                    return pd.to_datetime(date_str, format=date_format)
+                except ValueError:
+                    continue
+
+            # Если ни один формат не подошел, пробуем автоматическое определение
+            return pd.to_datetime(date_str, format='mixed')
+
+        except Exception as e:
+            logger.error(f"Ошибка при конвертации даты '{date_str}': {str(e)}")
+            return None
+
+    def _normalize_branch_name(self, branch_name):
+        """Нормализует названия филиалов"""
+
+        if not isinstance(branch_name, str):
+
+            return branch_name
+
+        # Словарь соответствия названий
+
+        branch_mapping = {
+            "нохияи Спитамен": "Спитамен",
+            "нохиаи Спитамен": "Спитамен",
+            "нохияи Ч. Расулов": "Ч. Расулов",
+            "нохиаи Ч. Расулов": "Ч. Расулов",
+            "шахри Панчакент": "Панчакент",
+            "шаҳри Панчакент": "Панчакент",
+        }
+
+        # Приводим к нижнему регистру для поиска
+
+        branch_name_lower = branch_name.lower()
+
+        # Ищем соответствие в маппинге
+
+        for key, value in branch_mapping.items():
+
+            if key.lower() in branch_name_lower:
+
+                return value
+
+        return branch_name
+
+    def read_excel(self):
+        """Читает и обрабатывает Excel файл"""
+        logger.info("Начало чтения Excel файла")
+        try:
+            temp_file_path = self.download_excel()
+            logger.info(f"Временный файл создан: {temp_file_path}")
+
+            if not os.path.exists(temp_file_path):
+                logger.error("Временный файл не создан")
+                raise Exception("Временный файл не создан")
+
+            file_size = os.path.getsize(temp_file_path)
+            logger.info(f"Размер файла: {file_size} байт")
+
+            if file_size == 0:
+                logger.error("Скачанный файл пуст")
+                raise Exception("Скачанный файл пуст")
+
+            df = pd.read_excel(temp_file_path)
+            logger.info(f"Прочитано строк: {len(df)}")
+            logger.debug(f"Колонки: {df.columns.tolist()}")
+
+            # Переименовываем колонки
+            column_mapping = {
+                "Дата": "Дата",
+                "Номер": "Номер",
+                "Организация": "Филиал",
+                "Партнер": "Клиент",
+            }
+
+            df = df.rename(columns=column_mapping)
+
+            # Конвертируем даты
+            logger.info("Конвертация дат...")
+            df["Дата"] = pd.to_datetime(df["Дата"], format='mixed')
+
+            # Проверяем успешность конвертации
+            if not pd.api.types.is_datetime64_any_dtype(df["Дата"]):
+                logger.error("Не удалось преобразовать колонку 'Дата' в datetime")
+                # Пробуем альтернативный метод
+                df["Дата"] = df["Дата"].apply(self._convert_date)
+
+            logger.info(f"Тип данных колонки 'Дата': {df['Дата'].dtype}")
+
+            # Нормализуем названия филиалов
+            logger.info("Нормализация названий филиалов...")
+            df["Филиал"] = df["Филиал"].apply(self._normalize_branch_name)
+
+            logger.info("Обработка данных завершена")
+
+            try:
+                os.unlink(temp_file_path)
+                logger.info("Временный файл удален")
+            except Exception as e:
+                logger.warning(f"Ошибка при удалении временного файла: {str(e)}")
+
+            return df
+
+        except Exception as e:
+            logger.error(f"Ошибка при чтении Excel файла: {str(e)}")
+            raise

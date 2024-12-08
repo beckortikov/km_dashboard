@@ -4,5 +4,7 @@ streamlit==1.29.0
 requests
 python-dotenv==1.0.0
 plotly==5.18.0
+python-dateutil
+openpyxl
 
 
