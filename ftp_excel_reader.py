@@ -111,34 +111,33 @@ class FTPExcelReader:
 
     def _normalize_branch_name(self, branch_name):
         """Нормализует названия филиалов"""
-
         if not isinstance(branch_name, str):
-
             return branch_name
 
         # Словарь соответствия названий
-
         branch_mapping = {
             "нохияи Спитамен": "Спитамен",
             "нохиаи Спитамен": "Спитамен",
-            "нохияи Ч. Расулов": "Ч. Расулов",
-            "нохиаи Ч. Расулов": "Ч. Расулов",
-            "шахри Панчакент": "Панчакент",
-            "шаҳри Панчакент": "Панчакент",
+            "нохияи Ч. Расулов": "Джаббор Расулов",
+            "нохиаи Ч. Расулов": "Джаббор Расулов",
+            "Ч. Расулов": "Джаббор Расулов",
+            "шахри Панчакент": "Пенджикент",
+            "шаҳри Панчакент": "Пенджикент",
+            "Панчакент": "Пенджикент",
+            "шахри Худжанд": "Худжанд",
+            "шаҳри Худжанд": "Худжанд",
         }
 
         # Приводим к нижнему регистру для поиска
-
         branch_name_lower = branch_name.lower()
 
         # Ищем соответствие в маппинге
-
         for key, value in branch_mapping.items():
-
             if key.lower() in branch_name_lower:
-
+                logger.info(f"Нормализация филиала: {branch_name} -> {value}")
                 return value
 
+        logger.warning(f"Неизвестное название филиала: {branch_name}")
         return branch_name
 
     def read_excel(self):
